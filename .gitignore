@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+env/
+wp_bot_venv/
+.wp_bot_venv/
+
+
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Veri ve model çıktıları
+chroma_db/
+data/test_subset/
+data/test_subset_manifest.json
+
+# macOS
+.DS_Store
+
+# PyTorch cache
+.cache/
+.venv/
+
+# Yapay Zeka ve Veritabanı Dosyaları
+chroma_data/
+temp_uploads/
+*.onnx
+
+# Görseller 
+photos/
+data/test_subset/
