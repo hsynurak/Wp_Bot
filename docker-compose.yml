@@ -1,0 +1,35 @@
+#version: '3.8'
+
+services:
+  # 1. PostgreSQL (İçinde Vektör Arama için pgvector eklentisi yüklü)
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: fashion_ai_db
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: strongpassword123
+      POSTGRES_DB: fashion_db
+    ports:
+      - "5455:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. MinIO (Fotoğrafları tutacağımız AWS S3 alternatifi depo)
+  minio:
+    image: minio/minio
+    container_name: fashion_ai_storage
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: strongpassword123
+    ports:
+      - "9000:9000" # Python API'mizin bağlanacağı port
+      - "9001:9001" # Senin arayüze gireceğin port
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  minio_data:

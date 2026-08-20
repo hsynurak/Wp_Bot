@@ -34,3 +34,13 @@ temp_uploads/
 # Görseller 
 photos/
 data/test_subset/
+
+# IDE ve Editör Ayarları
+.vscode/
+.cursor/
+
+# Anaconda Ortam Dosyaları
+anaconda_projects/
+
+# Özel Çıktı Dosyaları
+output3.png

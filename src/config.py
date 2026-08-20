@@ -2,6 +2,9 @@
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Proje kök dizini (src/ bir üst klasör)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -62,3 +65,11 @@ BENCHMARK_MODELS: dict[str, str] = {
     "efficientnet_b4": "collection_efficientnet_b4",
     "clip": "collection_clip",
 }
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://admin:strongpassword123@localhost:5455/fashion_db",
+)
+MINIO_URL = os.getenv("MINIO_URL", "localhost:9000")
+MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "admin")
+MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "strongpassword123")

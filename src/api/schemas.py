@@ -1,7 +1,9 @@
 """API İstek ve Yanıt (Request/Response) Modelleri."""
 
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, HttpUrl, Field
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, HttpUrl
+
 
 class SearchRequest(BaseModel):
     """WhatsApp webhook'undan veya uygulamadan gelecek arama isteği."""
@@ -9,16 +11,19 @@ class SearchRequest(BaseModel):
     company_id: str = Field(..., description="Aramanın yapılacağı kiracı/şirket ID'si")
     n_results: int = Field(5, description="Döndürülecek maksimum benzer ürün sayısı")
     min_similarity: Optional[float] = Field(
-        None, 
-        description="Minimum benzerlik eşiği (boş bırakılırsa config.py'deki değer kullanılır)"
+        None,
+        description="Minimum benzerlik eşiği (boş bırakılırsa config.py'deki değer kullanılır)",
     )
+
 
 class SearchResultItem(BaseModel):
     """Bulunan tek bir ürünün detayları."""
     id: str
+    model_code: str
+    image_url: Optional[str] = None
     distance: float
     similarity: float
-    metadata: Dict[str, Any]
+
 
 class SearchResponse(BaseModel):
     """Arama ucu noktasının ana yanıt modeli."""

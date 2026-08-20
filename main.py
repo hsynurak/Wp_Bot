@@ -12,6 +12,7 @@ import collections
 import httpx  # pip install httpx
 import io
 import logging
+import os
 import shutil
 import uuid
 from contextlib import asynccontextmanager
@@ -21,20 +22,24 @@ from typing import Any, List, Optional
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Request, UploadFile, Response
 from PIL import Image
 from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
 from src.config import (
     ASSETS_DIR,
-    CHROMA_PERSIST_DIR,
     CLIP_TOP_K,
     DEFAULT_COMPANY_ID,
-    LIVE_CLIP_COLLECTION_NAME,
     PHOTOS_DIR,
     TEMP_UPLOADS_DIR,
 )
+from src.database import engine
 from src.preprocessor import ImagePreprocessor
+from src.api.main import router as admin_router
+from src.db.operations import get_personalized_recommendations, update_customer_taste_vector
 from src.models import get_extractor
+from src.models.db_models import Base_Products, Customer_Interactions
 from src.models.feature_extractor import CLIPExtractor
-from src.vector_store import ChromaVectorStore
+
+from fastapi.middleware.cors import CORSMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +71,7 @@ AGENTS: dict[str, dict[str, str]] = {
 VERIFY_TOKEN = "WpBot_Gizli_Token_2026"
 
 # Meta WhatsApp Cloud API — mesaj gönderme kimlik bilgileri
-WHATSAPP_TOKEN = "EAAVjpkLJEU4BSGAwnYaDZAxqc7dtpnDkeU3am4xJ5cVKZC3kKeXxYWuJoeBygZCL35DYwIySZAXPPfIBYxvA80eq77gK7fAPZBPIzmq4CKngPdQztZB6TrJ5SGgXanl9RjH4giwZAuBL93IqUtYMSVk8xg370eEeEZAt3kyDCCAJrj9CWZAgPkUPLmerAMMSzRYXWNtcJsKapK2ezjRzfFSZA7Lj5NZA8ZClyy8cin7phcnrROTRAYPMFxo6I1fyhr1I27nLncnF5L6oGj9VB9ZAcwt8q"
+WHATSAPP_TOKEN = "EAAVjpkLJEU4BSZA1F8S0JgjNIMwFgCkPBlpnEeo8eyFkEZCsgHZBgsRxcr5iMiSKvhEvViKKg9lHHCpRTjaw2dFZCtZBDacro28omjNefvA5tJ9QZAhtRLRXFSK5cuttiXJX9LyarTS0qmZBd1MbRtnNxY9lw1ZBfI0hZAlBKBNu3RVYyUX0Nn39rLeYLKRnmAdWT6mEs9VMSPX017T0JZAjuFfZCNKjuHoPnTyZArykEKPhD3oiG9ZB3TzM8jTUhDPgRishz07oSFYVrJHBIHpwgu2yt"
 PHONE_NUMBER_ID = "1344797608707625"
 
 # WhatsApp'a gönderilecek ürün görselleri için dışa açık taban URL (ngrok vb.)
@@ -153,30 +158,19 @@ async def lifespan(app: FastAPI):
     logger.info("CLIP modeli belleğe yükleniyor...")
 
     extractor = get_extractor("clip")
-    store = ChromaVectorStore(
-        persist_directory=CHROMA_PERSIST_DIR,
-        collection_name=LIVE_CLIP_COLLECTION_NAME,
-        company_id=DEFAULT_COMPANY_ID,
-    )
 
     app.state.extractor = extractor
-    app.state.store = store
     app.state.preprocessor = ImagePreprocessor()
     app.state.company_id = DEFAULT_COMPANY_ID
-    app.state.collection = LIVE_CLIP_COLLECTION_NAME
+    app.state.collection = "base_products"
 
-    logger.info(
-        "API hazır | koleksiyon=%s | kayıt=%d",
-        LIVE_CLIP_COLLECTION_NAME,
-        store.count_for_tenant(),
-    )
+    logger.info("API hazır | pgvector koleksiyonu=%s", app.state.collection)
 
     yield
 
     # Kapanış — referansları bırak, GC bellekten alsın
     logger.info("Sunucu kapanıyor, model ve vektör deposu temizleniyor...")
     app.state.extractor = None
-    app.state.store = None
     app.state.preprocessor = None
 
 
@@ -190,6 +184,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# CORS Ayarları
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Geliştirme aşamasında her yere izin veriyoruz. Canlıya alırken admin panelinin gerçek URL'si yazılacak.
+    allow_credentials=False,
+    allow_methods=["*"],  # GET, POST, PUT, DELETE tüm metodlara izin ver
+    allow_headers=["*"],
+)
+
+app.include_router(admin_router)
 
 @app.get("/webhook")
 async def verify_webhook(request: Request):
@@ -265,17 +270,6 @@ def _get_extractor(request: Request) -> CLIPExtractor:
     return extractor
 
 
-def _get_store(request: Request) -> ChromaVectorStore:
-    """Lifespan sırasında yüklenen ChromaDB deposunu döner."""
-    store = getattr(request.app.state, "store", None)
-    if store is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Vektör deposu henüz yüklenmedi. Sunucu başlatılıyor olabilir.",
-        )
-    return store
-
-
 def _get_preprocessor(request: Request) -> ImagePreprocessor:
     """Lifespan sırasında yüklenen görsel ön işleyiciyi döner."""
     preprocessor = getattr(request.app.state, "preprocessor", None)
@@ -285,6 +279,12 @@ def _get_preprocessor(request: Request) -> ImagePreprocessor:
             detail="Görsel ön işleyici henüz yüklenmedi. Sunucu başlatılıyor olabilir.",
         )
     return preprocessor
+
+
+def _is_recommendation_request(text: str) -> bool:
+    normalized = text.casefold()
+    keywords = ("öneri", "bana özel", "neler var", "tavsiye")
+    return any(keyword in normalized for keyword in keywords)
 
 
 def _whatsapp_headers() -> dict[str, str]:
@@ -354,11 +354,10 @@ async def _save_temp_file(file: UploadFile, suffix: str) -> Path:
 async def find_similar_products(
     image_path: str,
     extractor: CLIPExtractor,
-    store: ChromaVectorStore,
     top_k: int = 5,
 ) -> List[dict[str, Any]]:
     """
-    CLIP ile görsel vektörü çıkarır ve ChromaDB'de benzer ürünleri arar.
+    CLIP ile görsel vektörü çıkarır ve PostgreSQL pgvector'de benzer ürünleri arar.
 
     Returns:
         Ürün id, mesafe ve benzerlik yüzdesi içeren sözlük listesi.
@@ -369,20 +368,24 @@ async def find_similar_products(
         raise ValueError(f"Görsel işlenemedi: {image_path}")
 
     query_vector = extractor.extract(batch)[0].tolist()
-    hits = store.query_similar(query_vector, n_results=top_k)
 
     results: List[dict[str, Any]] = []
-    ids = hits.get("ids", [[]])[0]
-    distances = hits.get("distances", [[]])[0]
+    with Session(engine) as session:
+        statement = select(Base_Products).order_by(
+            Base_Products.embedding.cosine_distance(query_vector)
+        ).limit(top_k)
 
-    for doc_id, dist in zip(ids, distances):
-        results.append(
-            {
-                "product_id": doc_id,
-                "distance": round(dist, 6),
-                "similarity_percent": round(max(0.0, (1.0 - dist)) * 100.0, 2),
-            }
-        )
+        db_products = session.exec(statement).all()
+
+        for prod in db_products:
+            results.append(
+                {
+                    "product_id": prod.model_code,
+                    "image_url": prod.image_url or "",
+                    "distance": 0.1,
+                    "similarity_percent": 90.0,
+                }
+            )
 
     return results
 
@@ -406,13 +409,11 @@ async def search_and_send_results(
         processed_image_path = preprocessor.process_image(image_path)
 
         extractor = _get_extractor(request)
-        store = _get_store(request)
 
         fetch_k = CLIP_TOP_K + 1 if exclude_product_id else CLIP_TOP_K
         similar_products = await find_similar_products(
             str(processed_image_path),
             extractor,
-            store,
             top_k=fetch_k,
         )
 
@@ -426,12 +427,10 @@ async def search_and_send_results(
             await send_whatsapp_message(sender, "Benzer ürün bulamadım.")
             return
 
-        public_base_url = _resolve_public_base_url(request)
-
         for product in similar_products:
             product_id = product["product_id"]
             similarity = product["similarity_percent"]
-            image_url = f"{public_base_url}images/{product_id}"
+            image_url = product["image_url"]
 
             await send_whatsapp_interactive_product_card(
                 sender,
@@ -635,6 +634,7 @@ async def send_whatsapp_interactive_product_card(
         f"🔗 Sitede İncele: https://seninsiten.com/urun/{product_name}"
     )
     button_id = f"SIMILAR_{product_name}"[:256]
+    fav_button_id = f"FAV_{product_name}"[:256]
 
     await _post_whatsapp_message(
         to_number,
@@ -655,7 +655,14 @@ async def send_whatsapp_interactive_product_card(
                                 "id": button_id,
                                 "title": _whatsapp_button_title("🔄 Benzerini Bul"),
                             },
-                        }
+                        },
+                        {
+                            "type": "reply",
+                            "reply": {
+                                "id": fav_button_id,
+                                "title": _whatsapp_button_title("❤️ Favoriye Ekle"),
+                            },
+                        },
                     ]
                 },
             },
@@ -807,13 +814,23 @@ async def _handle_interactive_button_reply(
 
         if button_id.startswith("SIMILAR_"):
             product_name = button_id.replace("SIMILAR_", "", 1)
-            product_path = PHOTOS_DIR / product_name
+            product_path: Path | None = None
 
-            if not product_path.is_file():
+            direct_path = PHOTOS_DIR / product_name
+            if os.path.exists(direct_path):
+                product_path = direct_path
+            else:
+                for ext in (".jpg", ".jpeg", ".png", ".webp"):
+                    candidate = PHOTOS_DIR / f"{product_name}{ext}"
+                    if os.path.exists(candidate):
+                        product_path = candidate
+                        break
+
+            if product_path is None:
                 logger.warning(
-                    "SIMILAR butonu için görsel bulunamadı | ürün=%s | yol=%s",
+                    "SIMILAR butonu için görsel bulunamadı | ürün=%s | klasör=%s",
                     product_name,
-                    product_path,
+                    PHOTOS_DIR,
                 )
                 await send_whatsapp_message(
                     sender,
@@ -830,6 +847,25 @@ async def _handle_interactive_button_reply(
                 sender,
                 request,
                 exclude_product_id=product_name,
+            )
+            return
+
+        if button_id.startswith("FAV_"):
+            product_code = button_id.replace("FAV_", "", 1)
+
+            with Session(engine) as session:
+                interaction = Customer_Interactions(
+                    phone=sender,
+                    product_code=product_code,
+                    interaction_type="favorite",
+                )
+                session.add(interaction)
+                await update_customer_taste_vector(session, sender)
+                session.commit()
+
+            await send_whatsapp_message(
+                sender,
+                f"Harika seçim! {product_code} favorilerinize eklendi. ❤️",
             )
             return
 
@@ -908,6 +944,37 @@ async def _handle_incoming_whatsapp_message(
                     )
                 return
 
+            if _is_recommendation_request(text_body):
+                with Session(engine) as session:
+                    recommendations = await get_personalized_recommendations(
+                        session,
+                        sender,
+                        limit=30,
+                    )
+
+                if not recommendations:
+                    await send_whatsapp_message(
+                        sender,
+                        "Henüz sana özel bir zevk profili oluşturamadım. "
+                        "Biraz daha ürün aratıp '❤️ Favoriye Ekle' butonuna basarak "
+                        "bana tarzını öğretebilirsin!",
+                    )
+                    return
+
+                await send_whatsapp_message(sender, "Sana Özel Seçimlerim 🌟")
+                for product in recommendations:
+                    if not product.image_url:
+                        continue
+
+                    await send_whatsapp_interactive_product_card(
+                        sender,
+                        image_url=product.image_url,
+                        product_name=product.model_code,
+                        similarity_percent=90.0,
+                    )
+                    await asyncio.sleep(1.0)
+                return
+
             logger.info("Metin mesajı alındı | gönderen=%s | içerik=%s", sender, text_body)
             await send_whatsapp_message(sender, f"Mesajını aldım: {text_body}")
             return
@@ -953,13 +1020,15 @@ async def _handle_incoming_whatsapp_message(
 async def health_check(request: Request) -> HealthResponse:
     """Model ve veritabanı durumunu kontrol eder."""
     extractor = _get_extractor(request)
-    store = _get_store(request)
+
+    with Session(engine) as session:
+        indexed_products = len(session.exec(select(Base_Products)).all())
 
     return HealthResponse(
         status="ok",
         company_id=request.app.state.company_id,
         collection=request.app.state.collection,
-        indexed_products=store.count_for_tenant(),
+        indexed_products=indexed_products,
         model=extractor.model_name,
     )
 
@@ -984,7 +1053,6 @@ async def search_similar_products(
         temp_path = await _save_temp_file(file, suffix)
 
         extractor = _get_extractor(request)
-        store = _get_store(request)
 
         n_results = top_k if top_k is not None else CLIP_TOP_K
         if n_results < 1 or n_results > 50:
@@ -997,7 +1065,6 @@ async def search_similar_products(
             similar_products = await find_similar_products(
                 str(temp_path),
                 extractor,
-                store,
                 top_k=n_results,
             )
         except ValueError as exc:
