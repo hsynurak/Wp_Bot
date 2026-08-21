@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 import string
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,9 +15,17 @@ from sqlmodel import Session, col, or_, select
 
 from src.core.security import get_current_superadmin, get_password_hash
 from src.database import get_session
-from src.models.db_models import Base_Tenants, Base_Users
+from src.models.db_models import (
+    Base_Invoices,
+    Base_Subscriptions,
+    Base_Tenant_Customers,
+    Base_Tenants,
+    Base_Users,
+)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+PLAN_FIYATLARI = {"Starter": 990, "Pro": 2490, "Enterprise": 5990}
 
 
 class TenantCreate(BaseModel):
@@ -81,6 +89,42 @@ class TenantPaginatedResponse(BaseModel):
     page_size: int
 
 
+class AdminStatsResponse(BaseModel):
+    firmaToplam: int
+    firmaAktif: int
+    musteriToplam: int
+    gorselGonderilen: int = 0
+    gorselEslesen: int = 0
+    degerlendirmeSayisi: int = 0
+    memnunSayisi: int = 0
+
+
+class SubscriptionResponse(BaseModel):
+    tenantId: uuid.UUID
+    company: str
+    email: str
+    plan: str
+    tutar: int
+    odemeDurumu: str
+    sonOdeme: date | None
+    sonrakiOdeme: date | None
+    gecikmeGun: int
+    odemeYontemi: str
+
+
+class SubscriptionStatusPatch(BaseModel):
+    odemeDurumu: str
+
+
+class InvoiceResponse(BaseModel):
+    id: str
+    tenantId: uuid.UUID
+    company: str
+    tutar: int
+    tarih: date
+    durum: str
+
+
 def _to_tenant_admin_response(tenant: Base_Tenants) -> TenantAdminResponse:
     return TenantAdminResponse(
         id=tenant.id,
@@ -111,6 +155,48 @@ def _get_tenant_or_404(session: Session, tenant_id: uuid.UUID) -> Base_Tenants:
     if tenant is None:
         raise HTTPException(status_code=404, detail="Firma bulunamadı.")
     return tenant
+
+
+def _to_subscription_response(
+    subscription: Base_Subscriptions,
+    tenant: Base_Tenants,
+) -> SubscriptionResponse:
+    return SubscriptionResponse(
+        tenantId=subscription.tenant_id,
+        company=tenant.name,
+        email=tenant.email,
+        plan=tenant.plan,
+        tutar=subscription.tutar,
+        odemeDurumu=subscription.odemeDurumu,
+        sonOdeme=subscription.sonOdeme,
+        sonrakiOdeme=subscription.sonrakiOdeme,
+        gecikmeGun=subscription.gecikmeGun,
+        odemeYontemi=subscription.odemeYontemi,
+    )
+
+
+def _to_invoice_response(
+    invoice: Base_Invoices,
+    tenant: Base_Tenants,
+) -> InvoiceResponse:
+    return InvoiceResponse(
+        id=invoice.id,
+        tenantId=invoice.tenant_id,
+        company=tenant.name,
+        tutar=invoice.tutar,
+        tarih=invoice.tarih,
+        durum=invoice.durum,
+    )
+
+
+def _get_subscription_or_404(
+    session: Session,
+    tenant_id: uuid.UUID,
+) -> Base_Subscriptions:
+    subscription = session.get(Base_Subscriptions, tenant_id)
+    if subscription is None:
+        raise HTTPException(status_code=404, detail="Abonelik bulunamadı.")
+    return subscription
 
 
 @router.get("/tenants", response_model=TenantPaginatedResponse)
@@ -176,6 +262,13 @@ def create_tenant(
         tenant_id=tenant.id,
     )
     session.add(user)
+
+    subscription = Base_Subscriptions(
+        tenant_id=tenant.id,
+        tutar=PLAN_FIYATLARI.get(payload.plan, 2490),
+        sonrakiOdeme=date.today() + timedelta(days=30),
+    )
+    session.add(subscription)
     session.commit()
     session.refresh(tenant)
 
@@ -239,3 +332,75 @@ def patch_tenant_status(
     session.commit()
     session.refresh(tenant)
     return _to_tenant_admin_response(tenant)
+
+
+@router.get("/stats", response_model=AdminStatsResponse)
+def get_admin_stats(
+    session: Session = Depends(get_session),
+    _: Base_Users = Depends(get_current_superadmin),
+) -> AdminStatsResponse:
+    firma_toplam: int = session.exec(select(func.count(Base_Tenants.id))).one()
+    firma_aktif: int = session.exec(
+        select(func.count(Base_Tenants.id)).where(Base_Tenants.status == "Aktif")
+    ).one()
+    musteri_toplam: int = session.exec(
+        select(func.count(Base_Tenant_Customers.id))
+    ).one()
+
+    return AdminStatsResponse(
+        firmaToplam=firma_toplam,
+        firmaAktif=firma_aktif,
+        musteriToplam=musteri_toplam,
+    )
+
+
+@router.get("/subscriptions", response_model=list[SubscriptionResponse])
+def list_subscriptions(
+    session: Session = Depends(get_session),
+    _: Base_Users = Depends(get_current_superadmin),
+) -> list[SubscriptionResponse]:
+    subscriptions = session.exec(select(Base_Subscriptions)).all()
+    results: list[SubscriptionResponse] = []
+
+    for subscription in subscriptions:
+        tenant = session.get(Base_Tenants, subscription.tenant_id)
+        if tenant is None:
+            continue
+        results.append(_to_subscription_response(subscription, tenant))
+
+    return results
+
+
+@router.patch("/subscriptions/{tenant_id}", response_model=SubscriptionResponse)
+def patch_subscription_status(
+    tenant_id: uuid.UUID,
+    payload: SubscriptionStatusPatch,
+    session: Session = Depends(get_session),
+    _: Base_Users = Depends(get_current_superadmin),
+) -> SubscriptionResponse:
+    subscription = _get_subscription_or_404(session, tenant_id)
+    tenant = _get_tenant_or_404(session, tenant_id)
+
+    subscription.odemeDurumu = payload.odemeDurumu
+
+    session.add(subscription)
+    session.commit()
+    session.refresh(subscription)
+    return _to_subscription_response(subscription, tenant)
+
+
+@router.get("/invoices", response_model=list[InvoiceResponse])
+def list_invoices(
+    session: Session = Depends(get_session),
+    _: Base_Users = Depends(get_current_superadmin),
+) -> list[InvoiceResponse]:
+    invoices = session.exec(select(Base_Invoices)).all()
+    results: list[InvoiceResponse] = []
+
+    for invoice in invoices:
+        tenant = session.get(Base_Tenants, invoice.tenant_id)
+        if tenant is None:
+            continue
+        results.append(_to_invoice_response(invoice, tenant))
+
+    return results

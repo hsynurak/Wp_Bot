@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum as PyEnum
 from typing import Any, List, Optional
 
@@ -39,6 +39,24 @@ class Base_Tenants(SQLModel, table=True):
     yetkili: str = Field(default="")
     botNumara: str = Field(default="")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Base_Subscriptions(SQLModel, table=True):
+    tenant_id: uuid.UUID = Field(primary_key=True, foreign_key="base_tenants.id")
+    tutar: int
+    odemeDurumu: str = Field(default="Beklemede")
+    sonOdeme: Optional[date] = None
+    sonrakiOdeme: Optional[date] = None
+    gecikmeGun: int = Field(default=0)
+    odemeYontemi: str = Field(default="Kredi Kartı")
+
+
+class Base_Invoices(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    tenant_id: uuid.UUID = Field(foreign_key="base_tenants.id")
+    tutar: int
+    tarih: date
+    durum: str = Field(default="Ödenmedi")
 
 
 class Base_Users(SQLModel, table=True):
