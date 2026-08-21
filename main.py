@@ -34,6 +34,7 @@ from src.config import (
 from src.database import engine
 from src.preprocessor import ImagePreprocessor
 from src.api.main import router as admin_router
+from src.api.admin_routes import router as super_admin_router
 from src.api.auth_routes import router as auth_router
 from src.api.tenant_routes import router as tenant_router
 from src.api.upload_routes import router as upload_router
@@ -201,6 +202,7 @@ app.add_middleware(
 )
 
 app.include_router(admin_router)
+app.include_router(super_admin_router, prefix="/api", tags=["Admin"])
 app.include_router(auth_router, prefix="/api", tags=["Auth"])
 app.include_router(tenant_router, prefix="/api/tenant", tags=["Tenant"])
 app.include_router(upload_router, prefix="/api", tags=["Upload"])

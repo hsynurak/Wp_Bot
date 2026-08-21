@@ -31,6 +31,13 @@ class Manufacturers(SQLModel, table=True):
 class Base_Tenants(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str
+    plan: str = Field(default="Pro")
+    status: str = Field(default="Aktif")
+    telefon: str = Field(default="")
+    email: str = Field(default="")
+    adres: str = Field(default="")
+    yetkili: str = Field(default="")
+    botNumara: str = Field(default="")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

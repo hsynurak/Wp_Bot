@@ -5,18 +5,15 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from src.core.security import ALGORITHM, SECRET_KEY, create_access_token, verify_password
+from src.core.security import create_access_token, get_current_user, verify_password
 from src.database import get_session
 from src.models.db_models import Base_Users
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 class UserPublic(BaseModel):
@@ -39,29 +36,6 @@ def _to_user_public(user: Base_Users) -> UserPublic:
         role=user.role,
         tenant_id=user.tenant_id,
     )
-
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    session: Session = Depends(get_session),
-) -> Base_Users:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Geçersiz kimlik bilgileri",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user = session.get(Base_Users, uuid.UUID(user_id))
-    if user is None:
-        raise credentials_exception
-    return user
 
 
 @router.post("/login", response_model=LoginResponse)
