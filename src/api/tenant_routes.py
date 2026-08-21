@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlmodel import Session, col, or_, select
 
 from src.database import get_session
-from src.models.db_models import Base_Products
+from src.models.db_models import Base_Products, Base_Tenant_Settings
 
 router = APIRouter()
 
@@ -50,6 +50,23 @@ class PaginatedProductsResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class TenantSettingsUpdate(BaseModel):
+    firmaAdi: str = ""
+    botTelefon: str = ""
+    sepetLinki: str = ""
+    katalogLinki: str = ""
+    tezgahtarAktif: bool = True
+
+
+class TenantSettingsResponse(BaseModel):
+    id: uuid.UUID
+    firmaAdi: str
+    botTelefon: str
+    sepetLinki: str
+    katalogLinki: str
+    tezgahtarAktif: bool
 
 
 def _parse_manufacturer_id(uretici: str) -> uuid.UUID:
@@ -116,6 +133,31 @@ def _build_search_filter(search: Optional[str]):
     return or_(
         col(Base_Products.name).ilike(term),
         col(Base_Products.model_code).ilike(term),
+    )
+
+
+def _get_or_create_tenant_settings(session: Session) -> Base_Tenant_Settings:
+    settings = session.exec(select(Base_Tenant_Settings)).first()
+    if settings is not None:
+        return settings
+
+    settings = Base_Tenant_Settings()
+    session.add(settings)
+    session.commit()
+    session.refresh(settings)
+    return settings
+
+
+def _to_tenant_settings_response(
+    settings: Base_Tenant_Settings,
+) -> TenantSettingsResponse:
+    return TenantSettingsResponse(
+        id=settings.id,
+        firmaAdi=settings.firmaAdi,
+        botTelefon=settings.botTelefon,
+        sepetLinki=settings.sepetLinki,
+        katalogLinki=settings.katalogLinki,
+        tezgahtarAktif=settings.tezgahtarAktif,
     )
 
 
@@ -212,3 +254,28 @@ def delete_product(
 
     session.delete(product)
     session.commit()
+
+
+@router.get("/settings", response_model=TenantSettingsResponse)
+def get_settings(session: Session = Depends(get_session)) -> TenantSettingsResponse:
+    settings = _get_or_create_tenant_settings(session)
+    return _to_tenant_settings_response(settings)
+
+
+@router.put("/settings", response_model=TenantSettingsResponse)
+def update_settings(
+    payload: TenantSettingsUpdate,
+    session: Session = Depends(get_session),
+) -> TenantSettingsResponse:
+    settings = _get_or_create_tenant_settings(session)
+
+    settings.firmaAdi = payload.firmaAdi
+    settings.botTelefon = payload.botTelefon
+    settings.sepetLinki = payload.sepetLinki
+    settings.katalogLinki = payload.katalogLinki
+    settings.tezgahtarAktif = payload.tezgahtarAktif
+
+    session.add(settings)
+    session.commit()
+    session.refresh(settings)
+    return _to_tenant_settings_response(settings)

@@ -45,6 +45,15 @@ class Base_Products(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Base_Tenant_Settings(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    firmaAdi: str = Field(default="")
+    botTelefon: str = Field(default="")
+    sepetLinki: str = Field(default="")
+    katalogLinki: str = Field(default="")
+    tezgahtarAktif: bool = Field(default=True)
+
+
 class Sellers(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str
