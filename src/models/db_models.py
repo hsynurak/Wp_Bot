@@ -54,6 +54,13 @@ class Base_Tenant_Settings(SQLModel, table=True):
     tezgahtarAktif: bool = Field(default=True)
 
 
+class Base_Tenant_Staff(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    ad: str
+    telefon: str = Field(default="")
+    gorsel: str = Field(default="")
+
+
 class Sellers(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str

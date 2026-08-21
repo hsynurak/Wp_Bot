@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlmodel import Session, col, or_, select
 
 from src.database import get_session
-from src.models.db_models import Base_Products, Base_Tenant_Settings
+from src.models.db_models import Base_Products, Base_Tenant_Settings, Base_Tenant_Staff
 
 router = APIRouter()
 
@@ -67,6 +67,19 @@ class TenantSettingsResponse(BaseModel):
     sepetLinki: str
     katalogLinki: str
     tezgahtarAktif: bool
+
+
+class StaffCreate(BaseModel):
+    ad: str
+    telefon: str = ""
+    gorsel: str = ""
+
+
+class StaffResponse(BaseModel):
+    id: uuid.UUID
+    ad: str
+    telefon: str
+    gorsel: str
 
 
 def _parse_manufacturer_id(uretici: str) -> uuid.UUID:
@@ -158,6 +171,15 @@ def _to_tenant_settings_response(
         sepetLinki=settings.sepetLinki,
         katalogLinki=settings.katalogLinki,
         tezgahtarAktif=settings.tezgahtarAktif,
+    )
+
+
+def _to_staff_response(staff: Base_Tenant_Staff) -> StaffResponse:
+    return StaffResponse(
+        id=staff.id,
+        ad=staff.ad,
+        telefon=staff.telefon,
+        gorsel=staff.gorsel,
     )
 
 
@@ -279,3 +301,58 @@ def update_settings(
     session.commit()
     session.refresh(settings)
     return _to_tenant_settings_response(settings)
+
+
+@router.get("/staff", response_model=list[StaffResponse])
+def list_staff(session: Session = Depends(get_session)) -> list[StaffResponse]:
+    staff_list = session.exec(select(Base_Tenant_Staff)).all()
+    return [_to_staff_response(staff) for staff in staff_list]
+
+
+@router.post("/staff", response_model=StaffResponse, status_code=201)
+def create_staff(
+    payload: StaffCreate,
+    session: Session = Depends(get_session),
+) -> StaffResponse:
+    staff = Base_Tenant_Staff(
+        ad=payload.ad,
+        telefon=payload.telefon,
+        gorsel=payload.gorsel,
+    )
+    session.add(staff)
+    session.commit()
+    session.refresh(staff)
+    return _to_staff_response(staff)
+
+
+@router.put("/staff/{staff_id}", response_model=StaffResponse)
+def update_staff(
+    staff_id: uuid.UUID,
+    payload: StaffCreate,
+    session: Session = Depends(get_session),
+) -> StaffResponse:
+    staff = session.get(Base_Tenant_Staff, staff_id)
+    if staff is None:
+        raise HTTPException(status_code=404, detail="Tezgahtar bulunamadı.")
+
+    staff.ad = payload.ad
+    staff.telefon = payload.telefon
+    staff.gorsel = payload.gorsel
+
+    session.add(staff)
+    session.commit()
+    session.refresh(staff)
+    return _to_staff_response(staff)
+
+
+@router.delete("/staff/{staff_id}", status_code=204)
+def delete_staff(
+    staff_id: uuid.UUID,
+    session: Session = Depends(get_session),
+) -> None:
+    staff = session.get(Base_Tenant_Staff, staff_id)
+    if staff is None:
+        raise HTTPException(status_code=404, detail="Tezgahtar bulunamadı.")
+
+    session.delete(staff)
+    session.commit()
