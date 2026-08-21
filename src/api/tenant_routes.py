@@ -173,6 +173,34 @@ def create_product(
     return _db_to_frontend_response(product)
 
 
+@router.put("/products/{product_id}", response_model=ProductFrontendResponse)
+def update_product(
+    product_id: uuid.UUID,
+    payload: ProductFrontendCreate,
+    session: Session = Depends(get_session),
+) -> ProductFrontendResponse:
+    product = session.get(Base_Products, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
+
+    product.model_code = payload.urunKodu
+    product.name = payload.name
+    product.image_url = payload.image
+    product.price = payload.price
+    product.category = payload.category
+    product.color = payload.renk
+    product.season = payload.sezon
+    product.status = payload.status
+    product.stock = payload.stock
+    product.manufacturer_id = _parse_manufacturer_id(payload.uretici)
+    product.size = _bedenler_to_size(payload.bedenler)
+
+    session.add(product)
+    session.commit()
+    session.refresh(product)
+    return _db_to_frontend_response(product)
+
+
 @router.delete("/products/{product_id}", status_code=204)
 def delete_product(
     product_id: uuid.UUID,
