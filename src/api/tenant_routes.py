@@ -112,14 +112,16 @@ def _db_to_frontend_response(product: Base_Products) -> ProductFrontendResponse:
 @router.get("/products", response_model=PaginatedProductsResponse)
 def list_products(
     session: Session = Depends(get_session),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedProductsResponse:
-    total = session.exec(select(func.count()).select_from(Base_Products)).one()
+    total: int = session.exec(select(func.count(Base_Products.id))).one()
     offset = (page - 1) * page_size
 
     products = session.exec(
-        select(Base_Products).offset(offset).limit(page_size)
+        select(Base_Products)
+        .offset(offset)
+        .limit(page_size)
     ).all()
 
     return PaginatedProductsResponse(
