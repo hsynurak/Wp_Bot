@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import string
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -11,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import Session, col, or_, select
 
-from src.core.security import get_current_superadmin
+from src.core.security import get_current_superadmin, get_password_hash
 from src.database import get_session
 from src.models.db_models import Base_Tenants, Base_Users
 
@@ -56,10 +58,20 @@ class TenantAdminResponse(BaseModel):
     botNumara: str
     created_at: datetime
     urunToplam: int = 0
+    urunAktif: int = 0
+    urunPasif: int = 0
     musteriToplam: int = 0
+    degerlendirmeSayisi: int = 0
+    memnunSayisi: int = 0
+    gorselGonderilen: int = 0
+    gorselEslesen: int = 0
     sepeteYonlendirme: int = 0
     temsilciyeBaglanti: int = 0
     benzeriArama: int = 0
+
+
+class TenantCreateResponse(TenantAdminResponse):
+    gecici_sifre: str
 
 
 class TenantPaginatedResponse(BaseModel):
@@ -135,12 +147,15 @@ def list_tenants(
     )
 
 
-@router.post("/tenants", response_model=TenantAdminResponse, status_code=201)
+@router.post("/tenants", response_model=TenantCreateResponse, status_code=201)
 def create_tenant(
     payload: TenantCreate,
     session: Session = Depends(get_session),
     _: Base_Users = Depends(get_current_superadmin),
-) -> TenantAdminResponse:
+) -> TenantCreateResponse:
+    alphabet = string.ascii_letters + string.digits
+    gecici_sifre = "".join(secrets.choice(alphabet) for _ in range(8))
+
     tenant = Base_Tenants(
         name=payload.name,
         plan=payload.plan,
@@ -152,9 +167,22 @@ def create_tenant(
         botNumara=payload.botNumara,
     )
     session.add(tenant)
+    session.flush()
+
+    user = Base_Users(
+        email=payload.email,
+        hashed_password=get_password_hash(gecici_sifre),
+        role="tenant",
+        tenant_id=tenant.id,
+    )
+    session.add(user)
     session.commit()
     session.refresh(tenant)
-    return _to_tenant_admin_response(tenant)
+
+    return TenantCreateResponse(
+        **_to_tenant_admin_response(tenant).model_dump(),
+        gecici_sifre=gecici_sifre,
+    )
 
 
 @router.get("/tenants/{tenant_id}", response_model=TenantAdminResponse)
