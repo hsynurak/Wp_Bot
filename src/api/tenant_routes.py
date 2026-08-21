@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func
-from sqlmodel import Session, select
+from sqlmodel import Session, col, or_, select
 
 from src.database import get_session
 from src.models.db_models import Base_Products
@@ -109,19 +109,39 @@ def _db_to_frontend_response(product: Base_Products) -> ProductFrontendResponse:
     )
 
 
+def _build_search_filter(search: Optional[str]):
+    if not search or not search.strip():
+        return None
+    term = f"%{search.strip()}%"
+    return or_(
+        col(Base_Products.name).ilike(term),
+        col(Base_Products.model_code).ilike(term),
+    )
+
+
 @router.get("/products", response_model=PaginatedProductsResponse)
 def list_products(
     session: Session = Depends(get_session),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    search: Optional[str] = Query(default=None),
 ) -> PaginatedProductsResponse:
-    total: int = session.exec(select(func.count(Base_Products.id))).one()
+    search_filter = _build_search_filter(search)
+
+    count_stmt = select(func.count(Base_Products.id))
+    products_stmt = select(Base_Products)
+
+    if search_filter is not None:
+        count_stmt = count_stmt.where(search_filter)
+        products_stmt = products_stmt.where(search_filter)
+
+    products_stmt = products_stmt.order_by(Base_Products.created_at.desc())
+
+    total: int = session.exec(count_stmt).one()
     offset = (page - 1) * page_size
 
     products = session.exec(
-        select(Base_Products)
-        .offset(offset)
-        .limit(page_size)
+        products_stmt.offset(offset).limit(page_size)
     ).all()
 
     return PaginatedProductsResponse(

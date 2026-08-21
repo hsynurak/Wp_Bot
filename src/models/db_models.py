@@ -42,6 +42,7 @@ class Base_Products(SQLModel, table=True):
     size: Optional[str] = None
     season: Optional[str] = None
     embedding: Any = Field(default=None, sa_column=Column(Vector(512)))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Sellers(SQLModel, table=True):
