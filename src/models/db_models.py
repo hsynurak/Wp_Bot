@@ -32,11 +32,16 @@ class Base_Products(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     model_code: str = Field(index=True, unique=True)
     manufacturer_id: uuid.UUID = Field(foreign_key="manufacturers.id")
+    name: str = Field(default="Bilinmeyen Ürün")
+    price: float = Field(default=0.0)
+    category: str = Field(default="Belirtilmedi")
+    status: str = Field(default="Aktif")
+    stock: int = Field(default=0)
     image_url: Optional[str] = None
     color: Optional[str] = None
     size: Optional[str] = None
     season: Optional[str] = None
-    embedding: Any = Field(sa_column=Column(Vector(512)))
+    embedding: Any = Field(default=None, sa_column=Column(Vector(512)))
 
 
 class Sellers(SQLModel, table=True):

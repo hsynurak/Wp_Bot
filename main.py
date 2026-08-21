@@ -34,6 +34,8 @@ from src.config import (
 from src.database import engine
 from src.preprocessor import ImagePreprocessor
 from src.api.main import router as admin_router
+from src.api.tenant_routes import router as tenant_router
+from src.api.upload_routes import router as upload_router
 from src.db.operations import get_personalized_recommendations, update_customer_taste_vector
 from src.models import get_extractor
 from src.models.db_models import Base_Products, Customer_Interactions
@@ -188,13 +190,18 @@ app = FastAPI(
 # CORS Ayarları
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Geliştirme aşamasında her yere izin veriyoruz. Canlıya alırken admin panelinin gerçek URL'si yazılacak.
-    allow_credentials=False,
-    allow_methods=["*"],  # GET, POST, PUT, DELETE tüm metodlara izin ver
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(admin_router)
+app.include_router(tenant_router, prefix="/api/tenant", tags=["Tenant"])
+app.include_router(upload_router, prefix="/api", tags=["Upload"])
 
 @app.get("/webhook")
 async def verify_webhook(request: Request):
