@@ -28,6 +28,21 @@ class Manufacturers(SQLModel, table=True):
     address: Optional[str] = None
 
 
+class Base_Tenants(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Base_Users(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    email: str = Field(unique=True)
+    hashed_password: str
+    role: str = Field(default="tenant")
+    tenant_id: Optional[uuid.UUID] = Field(default=None, foreign_key="base_tenants.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Base_Products(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     model_code: str = Field(index=True, unique=True)
@@ -43,6 +58,7 @@ class Base_Products(SQLModel, table=True):
     season: Optional[str] = None
     embedding: Any = Field(default=None, sa_column=Column(Vector(512)))
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    tenant_id: Optional[uuid.UUID] = Field(default=None, foreign_key="base_tenants.id")
 
 
 class Base_Tenant_Settings(SQLModel, table=True):
@@ -52,6 +68,7 @@ class Base_Tenant_Settings(SQLModel, table=True):
     sepetLinki: str = Field(default="")
     katalogLinki: str = Field(default="")
     tezgahtarAktif: bool = Field(default=True)
+    tenant_id: Optional[uuid.UUID] = Field(default=None, foreign_key="base_tenants.id")
 
 
 class Base_Tenant_Staff(SQLModel, table=True):
@@ -59,6 +76,7 @@ class Base_Tenant_Staff(SQLModel, table=True):
     ad: str
     telefon: str = Field(default="")
     gorsel: str = Field(default="")
+    tenant_id: Optional[uuid.UUID] = Field(default=None, foreign_key="base_tenants.id")
 
 
 class Base_Tenant_Customers(SQLModel, table=True):
@@ -71,6 +89,7 @@ class Base_Tenant_Customers(SQLModel, table=True):
     begenilenUrunler: Any = Field(default_factory=list, sa_column=Column(JSON))
     begenilmeyenUrunler: Any = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    tenant_id: Optional[uuid.UUID] = Field(default=None, foreign_key="base_tenants.id")
 
 
 class Sellers(SQLModel, table=True):
