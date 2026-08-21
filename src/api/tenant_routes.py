@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -112,6 +113,21 @@ class CustomerPaginatedResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class PopulerEtiket(BaseModel):
+    etiket: str
+    adet: int
+
+
+class TenantStatsResponse(BaseModel):
+    urunToplam: int
+    urunAktif: int
+    urunPasif: int
+    musteriToplam: int
+    toplamBegeni: int
+    toplamBegenmeme: int
+    populerEtiketler: list[PopulerEtiket]
 
 
 def _parse_manufacturer_id(uretici: str) -> uuid.UUID:
@@ -249,6 +265,33 @@ def _get_customer_by_phone(
     return session.exec(
         select(Base_Tenant_Customers).where(Base_Tenant_Customers.telefon == telefon)
     ).first()
+
+
+def _compute_populer_etiketler(
+    etiket_rows: list[list | None],
+) -> list[PopulerEtiket]:
+    counter: Counter[str] = Counter()
+
+    for tags in etiket_rows:
+        if not tags:
+            continue
+
+        seen_in_customer: set[str] = set()
+        for item in tags:
+            etiket: str | None = None
+            if isinstance(item, dict):
+                etiket = item.get("etiket")
+            elif isinstance(item, str):
+                etiket = item
+
+            if etiket and etiket not in seen_in_customer:
+                seen_in_customer.add(etiket)
+                counter[etiket] += 1
+
+    return [
+        PopulerEtiket(etiket=etiket, adet=adet)
+        for etiket, adet in counter.most_common(5)
+    ]
 
 
 @router.get("/products", response_model=PaginatedProductsResponse)
@@ -537,3 +580,38 @@ def delete_customer(
 
     session.delete(customer)
     session.commit()
+
+
+@router.get("/stats", response_model=TenantStatsResponse)
+def get_stats(session: Session = Depends(get_session)) -> TenantStatsResponse:
+    urun_toplam: int = session.exec(select(func.count(Base_Products.id))).one()
+    urun_aktif: int = session.exec(
+        select(func.count(Base_Products.id)).where(Base_Products.status == "Aktif")
+    ).one()
+    urun_pasif: int = session.exec(
+        select(func.count(Base_Products.id)).where(Base_Products.status == "Pasif")
+    ).one()
+    musteri_toplam: int = session.exec(
+        select(func.count(Base_Tenant_Customers.id))
+    ).one()
+
+    toplam_begeni = session.exec(
+        select(func.sum(Base_Tenant_Customers.begeni))
+    ).one()
+    toplam_begenmeme = session.exec(
+        select(func.sum(Base_Tenant_Customers.begenmeme))
+    ).one()
+
+    etiket_rows = session.exec(
+        select(Base_Tenant_Customers.vektorEtiketleri)
+    ).all()
+
+    return TenantStatsResponse(
+        urunToplam=urun_toplam,
+        urunAktif=urun_aktif,
+        urunPasif=urun_pasif,
+        musteriToplam=musteri_toplam,
+        toplamBegeni=int(toplam_begeni or 0),
+        toplamBegenmeme=int(toplam_begenmeme or 0),
+        populerEtiketler=_compute_populer_etiketler(etiket_rows),
+    )
