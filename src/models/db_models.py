@@ -4,7 +4,7 @@ from enum import Enum as PyEnum
 from typing import Any, List, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, Enum, String
+from sqlalchemy import JSON, Column, Enum, String
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -59,6 +59,18 @@ class Base_Tenant_Staff(SQLModel, table=True):
     ad: str
     telefon: str = Field(default="")
     gorsel: str = Field(default="")
+
+
+class Base_Tenant_Customers(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    kod: str
+    telefon: str
+    begeni: int = Field(default=0)
+    begenmeme: int = Field(default=0)
+    vektorEtiketleri: Any = Field(default_factory=list, sa_column=Column(JSON))
+    begenilenUrunler: Any = Field(default_factory=list, sa_column=Column(JSON))
+    begenilmeyenUrunler: Any = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Sellers(SQLModel, table=True):

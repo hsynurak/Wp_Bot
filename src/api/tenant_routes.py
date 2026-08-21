@@ -11,7 +11,12 @@ from sqlalchemy import func
 from sqlmodel import Session, col, or_, select
 
 from src.database import get_session
-from src.models.db_models import Base_Products, Base_Tenant_Settings, Base_Tenant_Staff
+from src.models.db_models import (
+    Base_Products,
+    Base_Tenant_Customers,
+    Base_Tenant_Settings,
+    Base_Tenant_Staff,
+)
 
 router = APIRouter()
 
@@ -80,6 +85,24 @@ class StaffResponse(BaseModel):
     ad: str
     telefon: str
     gorsel: str
+
+
+class CustomerResponse(BaseModel):
+    id: uuid.UUID
+    kod: str
+    telefon: str
+    begeni: int
+    begenmeme: int
+    vektorEtiketleri: list = []
+    begenilenUrunler: list = []
+    begenilmeyenUrunler: list = []
+
+
+class CustomerPaginatedResponse(BaseModel):
+    items: list[CustomerResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 def _parse_manufacturer_id(uretici: str) -> uuid.UUID:
@@ -180,6 +203,29 @@ def _to_staff_response(staff: Base_Tenant_Staff) -> StaffResponse:
         ad=staff.ad,
         telefon=staff.telefon,
         gorsel=staff.gorsel,
+    )
+
+
+def _to_customer_response(customer: Base_Tenant_Customers) -> CustomerResponse:
+    return CustomerResponse(
+        id=customer.id,
+        kod=customer.kod,
+        telefon=customer.telefon,
+        begeni=customer.begeni,
+        begenmeme=customer.begenmeme,
+        vektorEtiketleri=customer.vektorEtiketleri or [],
+        begenilenUrunler=customer.begenilenUrunler or [],
+        begenilmeyenUrunler=customer.begenilmeyenUrunler or [],
+    )
+
+
+def _build_customer_search_filter(search: Optional[str]):
+    if not search or not search.strip():
+        return None
+    term = f"%{search.strip()}%"
+    return or_(
+        col(Base_Tenant_Customers.kod).ilike(term),
+        col(Base_Tenant_Customers.telefon).ilike(term),
     )
 
 
@@ -356,3 +402,47 @@ def delete_staff(
 
     session.delete(staff)
     session.commit()
+
+
+@router.get("/customers", response_model=CustomerPaginatedResponse)
+def list_customers(
+    session: Session = Depends(get_session),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    search: Optional[str] = Query(default=None),
+) -> CustomerPaginatedResponse:
+    search_filter = _build_customer_search_filter(search)
+
+    count_stmt = select(func.count(Base_Tenant_Customers.id))
+    customers_stmt = select(Base_Tenant_Customers)
+
+    if search_filter is not None:
+        count_stmt = count_stmt.where(search_filter)
+        customers_stmt = customers_stmt.where(search_filter)
+
+    customers_stmt = customers_stmt.order_by(Base_Tenant_Customers.created_at.desc())
+
+    total: int = session.exec(count_stmt).one()
+    offset = (page - 1) * page_size
+
+    customers = session.exec(
+        customers_stmt.offset(offset).limit(page_size)
+    ).all()
+
+    return CustomerPaginatedResponse(
+        items=[_to_customer_response(customer) for customer in customers],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/customers/{customer_id}", response_model=CustomerResponse)
+def get_customer(
+    customer_id: uuid.UUID,
+    session: Session = Depends(get_session),
+) -> CustomerResponse:
+    customer = session.get(Base_Tenant_Customers, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı.")
+    return _to_customer_response(customer)
