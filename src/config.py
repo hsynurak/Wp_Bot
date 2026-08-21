@@ -66,10 +66,7 @@ BENCHMARK_MODELS: dict[str, str] = {
     "clip": "collection_clip",
 }
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://admin:strongpassword123@localhost:5455/fashion_db",
-)
-MINIO_URL = os.getenv("MINIO_URL", "localhost:9000")
-MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "admin")
-MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "strongpassword123")
+DATABASE_URL = os.getenv("DATABASE_URL")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")

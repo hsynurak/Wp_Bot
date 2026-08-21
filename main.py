@@ -68,15 +68,15 @@ AGENTS: dict[str, dict[str, str]] = {
 }
 
 # Meta WhatsApp Cloud API webhook doğrulama token'ı
-VERIFY_TOKEN = "WpBot_Gizli_Token_2026"
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
 # Meta WhatsApp Cloud API — mesaj gönderme kimlik bilgileri
-WHATSAPP_TOKEN = "EAAVjpkLJEU4BSZA1F8S0JgjNIMwFgCkPBlpnEeo8eyFkEZCsgHZBgsRxcr5iMiSKvhEvViKKg9lHHCpRTjaw2dFZCtZBDacro28omjNefvA5tJ9QZAhtRLRXFSK5cuttiXJX9LyarTS0qmZBd1MbRtnNxY9lw1ZBfI0hZAlBKBNu3RVYyUX0Nn39rLeYLKRnmAdWT6mEs9VMSPX017T0JZAjuFfZCNKjuHoPnTyZArykEKPhD3oiG9ZB3TzM8jTUhDPgRishz07oSFYVrJHBIHpwgu2yt"
-PHONE_NUMBER_ID = "1344797608707625"
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "")
 
 # WhatsApp'a gönderilecek ürün görselleri için dışa açık taban URL (ngrok vb.)
 # Boş bırakılırsa webhook isteğindeki request.base_url kullanılır.
-NGROK_URL = "https://epiphany-pager-twentieth.ngrok-free.dev"
+NGROK_URL = os.getenv("NGROK_URL", "")
 
 WHATSAPP_GRAPH_API = "https://graph.facebook.com/v17.0"
 MIME_TO_EXTENSION = {

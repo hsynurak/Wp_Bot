@@ -44,3 +44,5 @@ anaconda_projects/
 
 # Özel Çıktı Dosyaları
 output3.png
+
+*.log
