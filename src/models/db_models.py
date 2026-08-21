@@ -64,7 +64,7 @@ class Base_Tenant_Staff(SQLModel, table=True):
 class Base_Tenant_Customers(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     kod: str
-    telefon: str
+    telefon: str = Field(unique=True)
     begeni: int = Field(default=0)
     begenmeme: int = Field(default=0)
     vektorEtiketleri: Any = Field(default_factory=list, sa_column=Column(JSON))

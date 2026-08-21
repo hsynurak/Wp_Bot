@@ -98,6 +98,15 @@ class CustomerResponse(BaseModel):
     begenilmeyenUrunler: list = []
 
 
+class CustomerCreate(BaseModel):
+    telefon: str
+    begeni: int = 0
+    begenmeme: int = 0
+    vektorEtiketleri: list = []
+    begenilenUrunler: list = []
+    begenilmeyenUrunler: list = []
+
+
 class CustomerPaginatedResponse(BaseModel):
     items: list[CustomerResponse]
     total: int
@@ -227,6 +236,19 @@ def _build_customer_search_filter(search: Optional[str]):
         col(Base_Tenant_Customers.kod).ilike(term),
         col(Base_Tenant_Customers.telefon).ilike(term),
     )
+
+
+def _generate_customer_kod() -> str:
+    return f"MŞT-{str(uuid.uuid4())[:4].upper()}"
+
+
+def _get_customer_by_phone(
+    session: Session,
+    telefon: str,
+) -> Base_Tenant_Customers | None:
+    return session.exec(
+        select(Base_Tenant_Customers).where(Base_Tenant_Customers.telefon == telefon)
+    ).first()
 
 
 @router.get("/products", response_model=PaginatedProductsResponse)
@@ -446,3 +468,72 @@ def get_customer(
     if customer is None:
         raise HTTPException(status_code=404, detail="Müşteri bulunamadı.")
     return _to_customer_response(customer)
+
+
+@router.post("/customers", response_model=CustomerResponse, status_code=201)
+def create_customer(
+    payload: CustomerCreate,
+    session: Session = Depends(get_session),
+) -> CustomerResponse:
+    if _get_customer_by_phone(session, payload.telefon) is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Bu telefon numarası ile zaten bir müşteri kayıtlı.",
+        )
+
+    customer = Base_Tenant_Customers(
+        kod=_generate_customer_kod(),
+        telefon=payload.telefon,
+        begeni=payload.begeni,
+        begenmeme=payload.begenmeme,
+        vektorEtiketleri=payload.vektorEtiketleri,
+        begenilenUrunler=payload.begenilenUrunler,
+        begenilmeyenUrunler=payload.begenilmeyenUrunler,
+    )
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    return _to_customer_response(customer)
+
+
+@router.put("/customers/{customer_id}", response_model=CustomerResponse)
+def update_customer(
+    customer_id: uuid.UUID,
+    payload: CustomerCreate,
+    session: Session = Depends(get_session),
+) -> CustomerResponse:
+    customer = session.get(Base_Tenant_Customers, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı.")
+
+    existing = _get_customer_by_phone(session, payload.telefon)
+    if existing is not None and existing.id != customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Bu telefon numarası ile zaten bir müşteri kayıtlı.",
+        )
+
+    customer.telefon = payload.telefon
+    customer.begeni = payload.begeni
+    customer.begenmeme = payload.begenmeme
+    customer.vektorEtiketleri = payload.vektorEtiketleri
+    customer.begenilenUrunler = payload.begenilenUrunler
+    customer.begenilmeyenUrunler = payload.begenilmeyenUrunler
+
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    return _to_customer_response(customer)
+
+
+@router.delete("/customers/{customer_id}", status_code=204)
+def delete_customer(
+    customer_id: uuid.UUID,
+    session: Session = Depends(get_session),
+) -> None:
+    customer = session.get(Base_Tenant_Customers, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı.")
+
+    session.delete(customer)
+    session.commit()
