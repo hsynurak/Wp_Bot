@@ -381,6 +381,17 @@ def patch_subscription_status(
     subscription = _get_subscription_or_404(session, tenant_id)
     tenant = _get_tenant_or_404(session, tenant_id)
 
+    if payload.odemeDurumu == "Ödendi" and subscription.odemeDurumu != "Ödendi":
+        invoice_id = f"FTR-{date.today().year}-{str(uuid.uuid4())[:4].upper()}"
+        new_invoice = Base_Invoices(
+            id=invoice_id,
+            tenant_id=tenant_id,
+            tutar=subscription.tutar,
+            tarih=date.today(),
+            durum="Ödendi",
+        )
+        session.add(new_invoice)
+
     subscription.odemeDurumu = payload.odemeDurumu
 
     session.add(subscription)

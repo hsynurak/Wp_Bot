@@ -48,7 +48,7 @@ class Base_Subscriptions(SQLModel, table=True):
     sonOdeme: Optional[date] = None
     sonrakiOdeme: Optional[date] = None
     gecikmeGun: int = Field(default=0)
-    odemeYontemi: str = Field(default="Kredi Kartı")
+    odemeYontemi: str = Field(default="Belirlenmedi")
 
 
 class Base_Invoices(SQLModel, table=True):
