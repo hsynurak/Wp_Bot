@@ -4,7 +4,7 @@ from enum import Enum as PyEnum
 from typing import Any, List, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Column, Enum, String
+from sqlalchemy import JSON, Column, Enum, Index, String
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -38,6 +38,11 @@ class Base_Tenants(SQLModel, table=True):
     adres: str = Field(default="")
     yetkili: str = Field(default="")
     botNumara: str = Field(default="")
+    wa_phone_number_id: Optional[str] = Field(default=None)
+    wa_waba_id: Optional[str] = Field(default=None)
+    wa_isletme_adi: Optional[str] = Field(default=None)
+    wa_kalite_durumu: str = Field(default="GREEN")
+    wa_baglanti_tarihi: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -93,6 +98,7 @@ class Base_Tenant_Settings(SQLModel, table=True):
     sepetLinki: str = Field(default="")
     katalogLinki: str = Field(default="")
     tezgahtarAktif: bool = Field(default=True)
+    bot_settings: Any = Field(default_factory=dict, sa_column=Column(JSON))
     tenant_id: Optional[uuid.UUID] = Field(default=None, foreign_key="base_tenants.id")
 
 
@@ -115,6 +121,53 @@ class Base_Tenant_Customers(SQLModel, table=True):
     begenilmeyenUrunler: Any = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     tenant_id: Optional[uuid.UUID] = Field(default=None, foreign_key="base_tenants.id")
+
+
+class Base_Conversations(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    tenant_id: uuid.UUID = Field(foreign_key="base_tenants.id")
+    customer_id: Optional[uuid.UUID] = Field(
+        default=None,
+        foreign_key="base_tenant_customers.id",
+    )
+    wa_conversation_id: Optional[str] = None
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    last_message_at: datetime = Field(default_factory=datetime.utcnow)
+    current_state: str = Field(default="idle")
+    status: str = Field(default="active")
+
+
+class Base_Messages(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    conversation_id: uuid.UUID = Field(foreign_key="base_conversations.id")
+    tenant_id: uuid.UUID = Field(foreign_key="base_tenants.id")
+    wa_message_id: str = Field(unique=True, index=True)
+    direction: str
+    message_type: str
+    content: Optional[str] = None
+    media_url: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Base_Events(SQLModel, table=True):
+    __table_args__ = (
+        Index("idx_tenant_event_time", "tenant_id", "event_type", "created_at"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    tenant_id: uuid.UUID = Field(foreign_key="base_tenants.id")
+    customer_id: Optional[uuid.UUID] = Field(
+        default=None,
+        foreign_key="base_tenant_customers.id",
+    )
+    conversation_id: Optional[uuid.UUID] = Field(
+        default=None,
+        foreign_key="base_conversations.id",
+    )
+    event_type: str
+    product_id: Optional[uuid.UUID] = None
+    metadata_json: Any = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Sellers(SQLModel, table=True):

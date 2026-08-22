@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,12 +12,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import Session, col, or_, select
 
+from src.core.security import get_current_user
 from src.database import get_session
 from src.models.db_models import (
     Base_Products,
     Base_Tenant_Customers,
     Base_Tenant_Settings,
     Base_Tenant_Staff,
+    Base_Tenants,
+    Base_Users,
 )
 
 router = APIRouter()
@@ -615,3 +619,79 @@ def get_stats(session: Session = Depends(get_session)) -> TenantStatsResponse:
         toplamBegenmeme=int(toplam_begenmeme or 0),
         populerEtiketler=_compute_populer_etiketler(etiket_rows),
     )
+
+
+class WhatsAppConnectPayload(BaseModel):
+    code: str
+
+
+def _get_user_tenant(
+    session: Session,
+    current_user: Base_Users,
+) -> Base_Tenants:
+    if current_user.tenant_id is None:
+        raise HTTPException(status_code=404, detail="Tenant bulunamadı.")
+
+    tenant = session.get(Base_Tenants, current_user.tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant bulunamadı.")
+    return tenant
+
+
+@router.get("/whatsapp/status")
+def get_whatsapp_status(
+    session: Session = Depends(get_session),
+    current_user: Base_Users = Depends(get_current_user),
+) -> dict:
+    tenant = _get_user_tenant(session, current_user)
+    bagli = tenant.wa_phone_number_id is not None and tenant.wa_waba_id is not None
+
+    return {
+        "bagli": bagli,
+        "durum": "connected" if bagli else "disconnected",
+        "telefon": tenant.botNumara or tenant.telefon or "",
+        "phoneNumberId": tenant.wa_phone_number_id or "",
+        "wabaId": tenant.wa_waba_id or "",
+        "isletmeAdi": tenant.wa_isletme_adi or "",
+        "kaliteDurumu": tenant.wa_kalite_durumu,
+        "baglantiTarihi": tenant.wa_baglanti_tarihi,
+    }
+
+
+@router.post("/whatsapp/connect")
+def connect_whatsapp(
+    payload: WhatsAppConnectPayload,
+    session: Session = Depends(get_session),
+    current_user: Base_Users = Depends(get_current_user),
+) -> dict[str, str]:
+    tenant = _get_user_tenant(session, current_user)
+
+    tenant.wa_phone_number_id = "mock_phone_id"
+    tenant.wa_waba_id = "mock_waba_id"
+    tenant.wa_isletme_adi = "Mock İşletme"
+    tenant.wa_kalite_durumu = "GREEN"
+    tenant.wa_baglanti_tarihi = datetime.utcnow()
+
+    session.add(tenant)
+    session.commit()
+
+    return {"message": "WhatsApp bağlantısı başarıyla kuruldu."}
+
+
+@router.delete("/whatsapp/disconnect")
+def disconnect_whatsapp(
+    session: Session = Depends(get_session),
+    current_user: Base_Users = Depends(get_current_user),
+) -> dict[str, str]:
+    tenant = _get_user_tenant(session, current_user)
+
+    tenant.wa_phone_number_id = None
+    tenant.wa_waba_id = None
+    tenant.wa_isletme_adi = None
+    tenant.wa_kalite_durumu = "GREEN"
+    tenant.wa_baglanti_tarihi = None
+
+    session.add(tenant)
+    session.commit()
+
+    return {"message": "WhatsApp bağlantısı kesildi."}

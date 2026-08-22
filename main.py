@@ -38,6 +38,7 @@ from src.api.admin_routes import router as super_admin_router
 from src.api.auth_routes import router as auth_router
 from src.api.tenant_routes import router as tenant_router
 from src.api.upload_routes import router as upload_router
+from src.api.webhook_routes import router as webhook_router
 from src.db.operations import get_personalized_recommendations, update_customer_taste_vector
 from src.models import get_extractor
 from src.models.db_models import Base_Products, Customer_Interactions
@@ -206,6 +207,7 @@ app.include_router(super_admin_router, prefix="/api", tags=["Admin"])
 app.include_router(auth_router, prefix="/api", tags=["Auth"])
 app.include_router(tenant_router, prefix="/api/tenant", tags=["Tenant"])
 app.include_router(upload_router, prefix="/api", tags=["Upload"])
+app.include_router(webhook_router, prefix="/api", tags=["Webhook"])
 
 @app.get("/webhook")
 async def verify_webhook(request: Request):
