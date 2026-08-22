@@ -622,7 +622,9 @@ def get_stats(session: Session = Depends(get_session)) -> TenantStatsResponse:
 
 
 class WhatsAppConnectPayload(BaseModel):
-    code: str
+    code: Optional[str] = None
+    mock: Optional[bool] = False
+    telefon: Optional[str] = None
 
 
 def _get_user_tenant(
@@ -638,14 +640,8 @@ def _get_user_tenant(
     return tenant
 
 
-@router.get("/whatsapp/status")
-def get_whatsapp_status(
-    session: Session = Depends(get_session),
-    current_user: Base_Users = Depends(get_current_user),
-) -> dict:
-    tenant = _get_user_tenant(session, current_user)
+def _build_whatsapp_status_response(tenant: Base_Tenants) -> dict:
     bagli = tenant.wa_phone_number_id is not None and tenant.wa_waba_id is not None
-
     return {
         "bagli": bagli,
         "durum": "connected" if bagli else "disconnected",
@@ -658,24 +654,39 @@ def get_whatsapp_status(
     }
 
 
+@router.get("/whatsapp/status")
+def get_whatsapp_status(
+    session: Session = Depends(get_session),
+    current_user: Base_Users = Depends(get_current_user),
+) -> dict:
+    tenant = _get_user_tenant(session, current_user)
+    return _build_whatsapp_status_response(tenant)
+
+
 @router.post("/whatsapp/connect")
 def connect_whatsapp(
     payload: WhatsAppConnectPayload,
     session: Session = Depends(get_session),
     current_user: Base_Users = Depends(get_current_user),
-) -> dict[str, str]:
+) -> dict:
     tenant = _get_user_tenant(session, current_user)
 
-    tenant.wa_phone_number_id = "mock_phone_id"
-    tenant.wa_waba_id = "mock_waba_id"
-    tenant.wa_isletme_adi = "Mock İşletme"
-    tenant.wa_kalite_durumu = "GREEN"
-    tenant.wa_baglanti_tarihi = datetime.utcnow()
+    if payload.mock:
+        tenant.wa_phone_number_id = "mock_phone_id"
+        tenant.wa_waba_id = "mock_waba_id"
+        tenant.wa_isletme_adi = "Mock İşletme"
+        tenant.wa_kalite_durumu = "GREEN"
+        tenant.wa_baglanti_tarihi = datetime.utcnow()
+        if payload.telefon:
+            tenant.botNumara = payload.telefon
+    else:
+        # TODO: Meta Embedded Signup code exchange ile gerçek bağlantı kur.
+        pass
 
     session.add(tenant)
     session.commit()
-
-    return {"message": "WhatsApp bağlantısı başarıyla kuruldu."}
+    session.refresh(tenant)
+    return _build_whatsapp_status_response(tenant)
 
 
 @router.delete("/whatsapp/disconnect")
@@ -695,3 +706,46 @@ def disconnect_whatsapp(
     session.commit()
 
     return {"message": "WhatsApp bağlantısı kesildi."}
+
+
+@router.get("/whatsapp/settings")
+def get_whatsapp_settings(
+    session: Session = Depends(get_session),
+    current_user: Base_Users = Depends(get_current_user),
+) -> dict:
+    if current_user.tenant_id is None:
+        return {}
+
+    settings = session.exec(
+        select(Base_Tenant_Settings).where(
+            Base_Tenant_Settings.tenant_id == current_user.tenant_id
+        )
+    ).first()
+    if settings is None:
+        return {}
+
+    return settings.bot_settings or {}
+
+
+@router.put("/whatsapp/settings")
+def update_whatsapp_settings(
+    payload: dict,
+    session: Session = Depends(get_session),
+    current_user: Base_Users = Depends(get_current_user),
+) -> dict:
+    if current_user.tenant_id is None:
+        raise HTTPException(status_code=404, detail="Tenant bulunamadı.")
+
+    settings = session.exec(
+        select(Base_Tenant_Settings).where(
+            Base_Tenant_Settings.tenant_id == current_user.tenant_id
+        )
+    ).first()
+    if settings is None:
+        settings = Base_Tenant_Settings(tenant_id=current_user.tenant_id)
+
+    settings.bot_settings = payload
+    session.add(settings)
+    session.commit()
+    session.refresh(settings)
+    return settings.bot_settings or {}
